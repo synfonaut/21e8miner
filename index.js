@@ -36,7 +36,7 @@ function sign(tx, target=''){
   if(!is21e8Out(tx.inputs[0].output.script)){
     throw("Not a valid 21e8 script");
   }
-  const signature = Transaction.sighash.sign(tx, privKey, sigtype, 0, tx.inputs[0].output.script, new bsv.crypto.BN(tx.inputs[0].output.satoshis), flags);
+  const signature = Transaction.sighash.sign(tx, privKey, sigtype, 0, tx.inputs[0].output.script, new BN(tx.inputs[0].output.satoshis), flags);
   if(target!=''){
     const sig256 = bsv.crypto.Hash.sha256(Buffer.concat([signature.toBuffer(), Buffer.from(sigtype.toString(16), 'hex')])).toString('hex');
     if(!sig256.startsWith(target)){
@@ -63,10 +63,44 @@ function sign(tx, target=''){
   return tx;
 }
 
+function txfilter(m) {
+    if (m.magicnumber.indexOf("21e8") === 0 && m.magicnumber.length == 4) {
+        return true;
+    }
+}
 
-const start = async() => {
+
+const start = async(to=null) => {
   try {
+    if (!to) {
+        const data = await prompt.get(["to"]);
+        to = data["to"];
+        if(to === 'exit') return; //let them exit
+        if(!to.length){
+            throw("No address found.");
+        }
+    }
+
+    const response = await axios.get(`https://pow.market/api/unmined`);
+    const { magicnumbers } = response.data;
+    const pending = magicnumbers.filter(txfilter);
+
+    let txid = null;
+    if (pending.length === 0) {
+        console.log("sleeping 10s...");
+        const self = this;
+        setTimeout(function() {
+            start.bind(self)(to);
+        }, 10000);
+        return
+    }
+
+    txid = pending[0].txid;
+
+      /*
     const {txid} = await prompt.get(["txid"]);
+    */
+
     if(txid === 'exit') return; //let them exit
     let tx;
     try {
@@ -74,11 +108,6 @@ const start = async() => {
       tx = data;
     } catch(e) {
       throw("TX not found.");
-    }
-    const {to} = await prompt.get(["to"]);
-    if(txid === 'exit') return; //let them exit
-    if(!to.length){
-      throw("No address found.");
     }
     prompt.stop();
     console.log(chalk.green(`Mining TX: ${txid}`));
@@ -135,18 +164,20 @@ const mineId = async(from, to) => {
       newTX = sign(tx, target);
     }
     console.log(chalk.yellow(newTX.uncheckedSerialize()));
+    /*
     console.log("Publish? Y/N");
     const {publish} = await prompt.get(["publish"]);
-    if(publish.toLowerCase()[0] == 'y'){
-      try {
-        const {data} = await axios.post('https://api.whatsonchain.com/v1/bsv/main/tx/raw', { txhex: newTX.uncheckedSerialize() });
-        console.log(chalk.green('Published ' + Buffer.from(newTX._getHash()).reverse().toString('hex')));
-      } catch(e) {
-        console.log(chalk.red(JSON.stringify({error: e.response.data})));
-      }
-    } else {
-      return;
+    */
+    //if(publish.toLowerCase()[0] == 'y'){
+    try {
+      const {data} = await axios.post('https://api.whatsonchain.com/v1/bsv/main/tx/raw', { txhex: newTX.uncheckedSerialize() });
+      console.log(chalk.green('Published ' + Buffer.from(newTX._getHash()).reverse().toString('hex')));
+    } catch(e) {
+      console.log(chalk.red(JSON.stringify({error: e.response.data})));
     }
+    //} else {
+    //  return;
+    //}
 }
 
 start();
